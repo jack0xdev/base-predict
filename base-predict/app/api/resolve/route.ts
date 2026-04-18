@@ -1,17 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, type DailyCoinsRow, type PredictionRow } from "@/lib/supabase";
-import { fetchCoinPrices } from "@/lib/dexscreener";
+import { fetchCoinPrices, fetchCoinPrice } from "@/lib/dexscreener";
 import { CANDIDATES } from "@/lib/coins";
 import { todayUTC, yesterdayUTC } from "@/lib/session";
 import { cacheDel } from "@/lib/redis";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
 
 /**
- * Core resolve logic.
- * Picks top 3 Base App creator coins by 24h volume.
+ * Fetch price for a coin — tries batch first, falls back to individual fetch.
  */
+async function getPriceWithFallback(
+  address: string,
+  priceMap: Map<string, any>
+): Promise<{ priceUsd: number; volume24h: number; liquidity: number }> {
+  const pair = priceMap.get(address.toLowerCase());
+  
+  // If batch returned valid data, use it
+  if (pair && parseFloat(pair.priceUsd) > 0) {
+    return {
+      priceUsd: parseFloat(pair.priceUsd),
+      volume24h: pair.volume?.h24 ?? 0,
+      liquidity: pair.liquidity?.usd ?? 0,
+    };
+  }
+
+  // Fallback: fetch individually
+  try {
+    const singlePair = await fetchCoinPrice(address);
+    if (singlePair && parseFloat(singlePair.priceUsd) > 0) {
+      return {
+        priceUsd: parseFloat(singlePair.priceUsd),
+        volume24h: singlePair.volume?.h24 ?? 0,
+        liquidity: singlePair.liquidity?.usd ?? 0,
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  return { priceUsd: 0, volume24h: 0, liquidity: 0 };
+}
+
 export async function runResolve(authHeader: string | null, internal = false): Promise<{ ok: boolean; results: string[] }> {
   if (!internal) {
     const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
@@ -32,14 +64,13 @@ export async function runResolve(authHeader: string | null, internal = false): P
       const addresses = yesterdayRow.coins.map((c) => c.address);
       const priceMap = await fetchCoinPrices(addresses);
 
-      const changes = yesterdayRow.coins.map((coin) => {
-        const pair = priceMap.get(coin.address.toLowerCase());
-        const currentPrice = pair ? parseFloat(pair.priceUsd) : coin.startPrice;
+      const changes = await Promise.all(yesterdayRow.coins.map(async (coin) => {
+        const { priceUsd: currentPrice } = await getPriceWithFallback(coin.address, priceMap);
         const pctChange = coin.startPrice > 0
           ? ((currentPrice - coin.startPrice) / coin.startPrice) * 100
           : 0;
         return { address: coin.address.toLowerCase(), pctChange };
-      });
+      }));
 
       changes.sort((a, b) => b.pctChange - a.pctChange);
       const winner = changes[0];
@@ -87,49 +118,43 @@ export async function runResolve(authHeader: string | null, internal = false): P
       results.push("No yesterday data — skipping");
     }
 
-    // ─── Step 2: Pick today's top 3 creator coins by volume ───
+    // ─── Step 2: Pick today's top 3 coins ───
     const today = todayUTC();
     const { data: existingToday } = await supabaseAdmin
       .from("daily_coins").select("date").eq("date", today).single();
 
     if (!existingToday) {
-      // Fetch live data for ALL creator coins in our list
       const allAddresses = CANDIDATES.map((c) => c.address);
       const priceMap = await fetchCoinPrices(allAddresses);
 
-      // Build list with volume data, filter out dead coins
-      const coinsWithVolume = CANDIDATES
-        .map((coin) => {
-          const pair = priceMap.get(coin.address.toLowerCase());
+      // Fetch with individual fallback for each coin
+      const coinsWithVolume = await Promise.all(
+        CANDIDATES.map(async (coin) => {
+          const { priceUsd, volume24h, liquidity } = await getPriceWithFallback(
+            coin.address, priceMap
+          );
           return {
             ...coin,
             address: coin.address.toLowerCase(),
-            priceUsd: pair ? parseFloat(pair.priceUsd) : 0,
-            volume24h: pair?.volume?.h24 ?? 0,
-            liquidity: pair?.liquidity?.usd ?? 0,
+            priceUsd,
+            volume24h,
+            liquidity,
           };
         })
-        .filter((c) => c.priceUsd > 0 && c.volume24h > 0); // Only active coins
+      );
 
-      // Sort by 24h volume — top 3 most active creator coins
-      coinsWithVolume.sort((a, b) => b.volume24h - a.volume24h);
-      const top3 = coinsWithVolume.slice(0, 3);
+      // Only active coins with valid price
+      const activeCoins = coinsWithVolume.filter((c) => c.priceUsd > 0);
+      activeCoins.sort((a, b) => b.volume24h - a.volume24h);
+      const top3 = activeCoins.slice(0, 3);
 
+      // Fallback if less than 3
       if (top3.length < 3) {
-        // Fallback: if less than 3 have volume, fill with random from candidates
         const used = new Set(top3.map((c) => c.address));
-        const remaining = CANDIDATES.filter((c) => !used.has(c.address.toLowerCase()));
+        const remaining = coinsWithVolume.filter((c) => !used.has(c.address));
         while (top3.length < 3 && remaining.length > 0) {
           const idx = Math.floor(Math.random() * remaining.length);
-          const coin = remaining[idx];
-          const pair = priceMap.get(coin.address.toLowerCase());
-          top3.push({
-            ...coin,
-            address: coin.address.toLowerCase(),
-            priceUsd: pair ? parseFloat(pair.priceUsd) : 0,
-            volume24h: 0,
-            liquidity: 0,
-          });
+          top3.push(remaining[idx]);
           remaining.splice(idx, 1);
         }
       }
@@ -149,7 +174,7 @@ export async function runResolve(authHeader: string | null, internal = false): P
       if (insertErr) {
         results.push(`Error: ${insertErr.message}`);
       } else {
-        results.push(`Today's top coins: ${coinsForDb.map((c) => `${c.symbol} ($${c.startPrice.toFixed(6)})`).join(", ")}`);
+        results.push(`Today's coins: ${coinsForDb.map((c) => `${c.symbol} ($${c.startPrice.toFixed(6)})`).join(", ")}`);
       }
     } else {
       results.push("Today's coins already set");
