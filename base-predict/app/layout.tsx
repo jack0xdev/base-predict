@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Base Predict — Daily Creator Coin Prediction Game",
   description:
     "Predict which Base creator coin pumps the most in 24 hours. Build streaks, earn points, climb the leaderboard.",
+  other: {
+    "base:app_id": "69e3377187970a2e83bef268",
+  },
   openGraph: {
     title: "Base Predict",
     description: "Daily creator coin prediction game on Base",
