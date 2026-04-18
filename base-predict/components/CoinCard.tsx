@@ -68,13 +68,13 @@ export function CoinCard({
             </div>
           </div>
 
-          {/* External link to Base App */}
+          {/* External link to DexScreener instead of Base App coin page */}
           <a
-            href={`https://base.app/coin/base-mainnet/${coin.address}`}
+            href={`https://dexscreener.com/base/${coin.address}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-bone-muted hover:text-base-blue transition-colors p-1"
-            aria-label={`View ${coin.symbol} on Base App`}
+            aria-label={`View ${coin.symbol} on DexScreener`}
           >
             <ExternalLink size={14} />
           </a>
@@ -83,14 +83,14 @@ export function CoinCard({
         {/* Price display */}
         <div className="space-y-1">
           <p className="font-mono text-2xl tabular-nums text-bone tracking-tight">
-            {currentPrice != null
+            {currentPrice != null && currentPrice > 0
               ? `$${currentPrice < 0.01
                   ? currentPrice.toFixed(6)
                   : currentPrice < 1
                     ? currentPrice.toFixed(4)
                     : currentPrice.toFixed(2)
                 }`
-              : "—"
+              : "Loading…"
             }
           </p>
           {change24h != null && (
