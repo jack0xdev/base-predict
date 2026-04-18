@@ -1,0 +1,152 @@
+/* ============================================================
+   Fonts — Fontshare CDN (Clash Display + Satoshi)
+   ============================================================ */
+@import url("https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=satoshi@400,500,700,900&display=swap");
+
+/* JetBrains Mono from Google Fonts */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Base layer — design tokens & resets
+   ============================================================ */
+@layer base {
+  :root {
+    --color-bg: #0a0a0a;
+    --color-bone: rgba(245, 242, 234, 1);
+    --color-bone-muted: rgba(245, 242, 234, 0.6);
+    --color-bone-faint: rgba(245, 242, 234, 0.1);
+    --color-base-blue: #0052ff;
+    --color-acid: #d4ff3a;
+    --color-amber: #f5a623;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: "Satoshi", sans-serif;
+    background-color: var(--color-bg);
+    color: var(--color-bone);
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(245, 242, 234, 0.15);
+    border-radius: 3px;
+  }
+}
+
+/* ============================================================
+   Noise + grid background overlay
+   ============================================================ */
+@layer components {
+  .bg-noise {
+    position: relative;
+  }
+  .bg-noise::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      /* Subtle dot grid */
+      radial-gradient(circle at 1px 1px, rgba(245, 242, 234, 0.03) 1px, transparent 0);
+    background-size: 32px 32px;
+  }
+  .bg-noise::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+
+  /* Radial atmosphere glow */
+  .bg-atmosphere {
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 20%, rgba(212, 255, 58, 0.05) 0%, transparent 50%),
+      var(--color-bg);
+  }
+
+  /* Hairline borders */
+  .border-hairline {
+    border-color: rgba(245, 242, 234, 0.1);
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Marquee */
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 40s linear infinite;
+  }
+  .marquee-track:hover {
+    animation-play-state: paused;
+  }
+
+  /* Glass panel */
+  .glass {
+    background: rgba(17, 17, 17, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(245, 242, 234, 0.08);
+  }
+
+  /* Opacity fade-up stagger (used with animate-fade-up-N) */
+  .opacity-0-initial {
+    opacity: 0;
+  }
+}
+
+/* ============================================================
+   Utility overrides
+   ============================================================ */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Number styling — tabular figures in mono */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  /* Focus ring */
+  .focus-ring {
+    @apply outline-none ring-2 ring-base-blue ring-offset-2 ring-offset-surface-0;
+  }
+}
