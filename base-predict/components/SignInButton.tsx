@@ -4,11 +4,10 @@ import { useState, useCallback } from "react";
 import { useAccount, useConnect, useSignMessage, useDisconnect } from "wagmi";
 import { SiweMessage } from "siwe";
 import { Wallet, LogOut, Loader2 } from "lucide-react";
-import { injected } from "wagmi/connectors";
+import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { StreakBadge } from "./StreakBadge";
 
 interface SignInButtonProps {
-  /** Current session address from server, null if not authed */
   sessionAddress: string | null;
   streak?: number;
   onAuthChange?: () => void;
@@ -26,40 +25,43 @@ export function SignInButton({ sessionAddress, streak = 0, onAuthChange }: SignI
   const truncate = (addr: string) =>
     `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
+  const getConnector = () => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      return coinbaseWallet({ appName: "Base Predict", preference: "smartWalletOnly" });
+    }
+    return injected();
+  };
+
   const signIn = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Step 1: ensure wallet connected
       let walletAddress = address;
       if (!isConnected || !walletAddress) {
-        const result = await connectAsync({ connector: injected() });
+        const result = await connectAsync({ connector: getConnector() });
         walletAddress = result.accounts[0];
       }
       if (!walletAddress) throw new Error("No wallet address");
 
-      // Step 2: get nonce from server
       const nonceRes = await fetch("/api/auth/nonce");
       if (!nonceRes.ok) throw new Error("Failed to get nonce");
       const { nonce } = await nonceRes.json();
 
-      // Step 3: create SIWE message
       const message = new SiweMessage({
         domain: window.location.host,
         address: walletAddress,
         statement: "Sign in to Base Predict",
         uri: window.location.origin,
         version: "1",
-        chainId: 8453, // Base mainnet
+        chainId: 8453,
         nonce,
       });
       const messageStr = message.prepareMessage();
 
-      // Step 4: sign message
       const signature = await signMessageAsync({ message: messageStr });
 
-      // Step 5: verify on server
       const verifyRes = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,7 +75,6 @@ export function SignInButton({ sessionAddress, streak = 0, onAuthChange }: SignI
       onAuthChange?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Sign-in failed";
-      // Don't show error for user rejection
       if (!msg.includes("rejected") && !msg.includes("denied")) {
         setError(msg);
       }
@@ -85,7 +86,6 @@ export function SignInButton({ sessionAddress, streak = 0, onAuthChange }: SignI
   const signOut = useCallback(async () => {
     try {
       await disconnectAsync();
-      // Clear server session
       await fetch("/api/auth/verify", { method: "DELETE" });
       onAuthChange?.();
     } catch {
@@ -93,7 +93,6 @@ export function SignInButton({ sessionAddress, streak = 0, onAuthChange }: SignI
     }
   }, [disconnectAsync, onAuthChange]);
 
-  // Authenticated state
   if (sessionAddress) {
     return (
       <div className="flex items-center gap-2">
@@ -115,7 +114,6 @@ export function SignInButton({ sessionAddress, streak = 0, onAuthChange }: SignI
     );
   }
 
-  // Unauthenticated state
   return (
     <div className="flex flex-col items-end">
       <button
