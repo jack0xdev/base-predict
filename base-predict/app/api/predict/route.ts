@@ -4,7 +4,6 @@ import { supabaseAdmin, type DailyCoinsRow } from "@/lib/supabase";
 import { predictLimiter, cacheDel } from "@/lib/redis";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,9 +21,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Parse body
-    const { coinAddress } = await req.json();
+    const { coinAddress, txHash } = await req.json();
     if (!coinAddress || typeof coinAddress !== "string") {
       return NextResponse.json({ error: "Missing coinAddress" }, { status: 400 });
+    }
+
+    // Require transaction hash (ETH payment proof)
+    if (!txHash || typeof txHash !== "string") {
+      return NextResponse.json({ error: "Payment required. No transaction hash provided." }, { status: 402 });
     }
 
     const date = todayUTC();
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid coin — not one of today's options" }, { status: 400 });
     }
 
-    // Insert prediction
+    // Insert prediction (unique constraint prevents duplicates)
     const { error: insertErr } = await supabaseAdmin.from("predictions").insert({
       user_address: address,
       date,
@@ -63,7 +67,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
-    // Update user stats
+    // Increment total_predictions for user
     const { data: user } = await supabaseAdmin
       .from("users")
       .select("total_predictions")
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest) {
     // Invalidate caches
     await cacheDel("today", `profile:${address.toLowerCase()}`);
 
-    return NextResponse.json({ ok: true, date, picked: coinAddress });
+    return NextResponse.json({ ok: true, date, picked: coinAddress, txHash });
   } catch (err) {
     console.error("[api/predict]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
